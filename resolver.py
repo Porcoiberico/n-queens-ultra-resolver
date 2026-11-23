@@ -294,7 +294,7 @@ class MemeticoExtremo:
 
 if __name__ == "__main__":
     N = 1000
-    CANTIDAD_FIJAS = 1000
+    CANTIDAD_FIJAS = 700
     
     print(f"--- GENERANDO {CANTIDAD_FIJAS} REINAS FIJAS ALEATORIAS PARA N={N} ---")
     reinas_iniciales = generar_reinas_fijas_validas(N, CANTIDAD_FIJAS)
