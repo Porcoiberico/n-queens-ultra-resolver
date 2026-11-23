@@ -6,9 +6,35 @@ from numba import njit
 import numpy as np
 
 # =================================================================
+# GENERADOR DE REINAS FIJAS ALEATORIAS VÁLIDAS
+# =================================================================
+def generar_reinas_fijas_validas(n, cantidad):
+    reinas_fijas = {}
+    filas_ocupadas = set()
+    d1_ocupadas = set()
+    d2_ocupadas = set()
+    
+    intentos = 0
+    while len(reinas_fijas) < cantidad and intentos < cantidad * 500:
+        c = random.randint(0, n - 1)
+        f = random.randint(0, n - 1)
+        
+        if c not in reinas_fijas and f not in filas_ocupadas:
+            if (f + c) not in d1_ocupadas and (f - c) not in d2_ocupadas:
+                reinas_fijas[c] = f
+                filas_ocupadas.add(f)
+                d1_ocupadas.add(f + c)
+                d2_ocupadas.add(f - c)
+        intentos += 1
+        
+    if len(reinas_fijas) < cantidad:
+        return generar_reinas_fijas_validas(n, cantidad)
+        
+    return reinas_fijas
+
+# =================================================================
 # NÚCLEO MATEMÁTICO COMPILADO A C++ (NUMBA JIT) CON GLS Y VNS
 # =================================================================
-
 @njit
 def calcular_aptitud_jit(tablero):
     n = len(tablero)
@@ -26,7 +52,6 @@ def calcular_aptitud_jit(tablero):
             conflictos += (d1_counts[i] * (d1_counts[i] - 1)) // 2
         if d2_counts[i] > 1:
             conflictos += (d2_counts[i] * (d2_counts[i] - 1)) // 2
-            
     return conflictos
 
 @njit
@@ -57,7 +82,6 @@ def evaluar_intercambio_gls_jit(tablero, c1, c2, pen_d1, pen_d2, lambda_pen):
 
     costo_antes = ch_antes + lambda_pen * p_antes
     costo_despues = ch_despues + lambda_pen * p_despues
-
     return costo_antes - costo_despues
 
 @njit
@@ -86,7 +110,6 @@ def evaluar_3swap_jit(tablero, c1, c2, c3):
 # =================================================================
 # REPARADOR HÍBRIDO (GLS + VNS + TABÚ)
 # =================================================================
-
 def reparar_gls_vns_acelerado(args):
     tablero_list, n, reinas_fijas, cols_libres, max_pasos = args
     tablero = np.array(tablero_list, dtype=np.int32)
@@ -119,7 +142,6 @@ def reparar_gls_vns_acelerado(args):
         
         muestra_c2 = random.sample(cols_libres, min(30, len(cols_libres)))
         
-        # 1. BÚSQUEDA LOCAL 2-SWAP CON GLS
         for c2 in muestra_c2:
             if c1 == c2 or (c1, c2) in tabu_list or (c2, c1) in tabu_list: continue
             mejora = evaluar_intercambio_gls_jit(tablero, c1, c2, pen_d1, pen_d2, lambda_pen)
@@ -132,19 +154,16 @@ def reparar_gls_vns_acelerado(args):
             tabu_list.append((c1, mejor_c2))
             if len(tabu_list) > 10: tabu_list.pop(0)
         else:
-            # 2. VECINDAD VARIABLE VNS (3-SWAP SI EL 2-SWAP FALLA)
             conf_actuales = int(calcular_aptitud_jit(tablero))
             if conf_actuales <= 20 and len(cols_libres) >= 3:
                 c2, c3 = random.sample(cols_libres, 2)
                 if c1 != c2 and c1 != c3:
                     red_3swap = evaluar_3swap_jit(tablero, c1, c2, c3)
                     if red_3swap > 0:
-                        # Aplicar rotación c1<-c3, c2<-c1, c3<-c2
                         f1, f2, f3 = tablero[c1], tablero[c2], tablero[c3]
                         tablero[c1], tablero[c2], tablero[c3] = f3, f1, f2
                         continue
 
-            # 3. ACTUALIZACIÓN DE PENALIZACIONES GLS (INCREMENTAR MÍNIMO LOCAL)
             f1 = tablero[c1]
             pen_d1[f1 + c1] += 1.0
             pen_d2[f1 - c1 + n] += 1.0
@@ -154,7 +173,6 @@ def reparar_gls_vns_acelerado(args):
 # =================================================================
 # CLASE PRINCIPAL MEMÉTICA EXTREMA
 # =================================================================
-
 class MemeticoExtremo:
     def __init__(self, n, reinas_fijas, tam_poblacion=20):
         self.n = n
@@ -165,18 +183,22 @@ class MemeticoExtremo:
         self.filas_libres = [f for f in range(n) if f not in self.filas_fijas]
 
     def crear_ind_semicristalino(self):
-        """Inicialización O(N) Semicristalina usando paso de caballo"""
         tablero = [-1] * self.n
         for c, f in self.reinas_fijas.items():
             tablero[c] = f
             
         m = len(self.filas_libres)
+        if m == 0:
+            return tablero
+            
+        # Permutación garantizada sin elementos duplicados
+        indices = list(range(1, m, 2)) + list(range(0, m, 2))
         offset = random.randint(0, m - 1)
-        # Reordenado por zancada fija para minimizar choques diagonales en Gen 0
-        filas_patron = [self.filas_libres[(2 * i + offset) % m] for i in range(m)]
+        indices = indices[offset:] + indices[:offset]
         
-        for c, f in zip(self.cols_libres, filas_patron):
-            tablero[c] = f
+        for c, idx in zip(self.cols_libres, indices):
+            tablero[c] = self.filas_libres[idx]
+            
         return tablero
 
     def cruzar(self, p1, p2):
@@ -271,15 +293,17 @@ class MemeticoExtremo:
                 generacion += 1
 
 if __name__ == "__main__":
-    N = 10000
-    filas_iniciales = [200, 500, 900, 1500, 2200, 2700, 3200, 3700, 4200, 4700, 5200, 5700, 6200, 6700, 7200]
-    reinas_iniciales = {col * 100: fila for col, fila in enumerate(filas_iniciales)}
-
-    print(f"--- ALGORITMO EXTREMO GLS + VNS N={N} ---")
-    motor = MemeticoExtremo(N, reinas_iniciales, tam_poblacion=20)
+    N = 1000
+    CANTIDAD_FIJAS = 50
     
+    print(f"--- GENERANDO {CANTIDAD_FIJAS} REINAS FIJAS ALEATORIAS PARA N={N} ---")
+    reinas_iniciales = generar_reinas_fijas_validas(N, CANTIDAD_FIJAS)
+    print(f"[*] Reinas fijas colocadas correctamente. Lanzando motor...")
+    print(f"--- ALGORITMO EXTREMO BENCHMARK N={N} (FIJAS={CANTIDAD_FIJAS}) ---")
+    
+    motor = MemeticoExtremo(N, reinas_iniciales, tam_poblacion=20)
     exito, _, gens, t_ejecucion = motor.resolver()
 
     if exito:
-        print(f"\n¡ÉXITO TOTAL! Solución en {gens} generaciones.")
+        print(f"\n¡RETO SUPERADO! Solución en {gens} generaciones.")
     print(f"Tiempo total: {t_ejecucion:.4f} segundos")
