@@ -12,7 +12,7 @@ import numpy as np
 def preprocesar_dominios_ac3(n, reinas_fijas):
     """
     Poda AC-3 / Forward Checking de paso único respecto a las reinas fijas.
-    Calcula los dominios válidos para cada columna libre en O(K * N).
+    Calcula los dominios válidos para cada columna libre.
     """
     filas_bloqueadas = set(reinas_fijas.values())
     d1_bloqueadas = {f + c for c, f in reinas_fijas.items()}
@@ -22,7 +22,6 @@ def preprocesar_dominios_ac3(n, reinas_fijas):
     cols_libres = [c for c in range(n) if c not in reinas_fijas]
     
     for c in cols_libres:
-        # Poda: solo filas libres cuyas diagonales no crucen con las reinas fijas
         dom_c = [
             f for f in range(n) 
             if f not in filas_bloqueadas 
@@ -45,7 +44,7 @@ def generar_individuo_ac3_mrv(n, reinas_fijas, dominios, cols_libres):
         
     filas_disponibles = set(range(n)) - set(reinas_fijas.values())
     
-    # Ordenación MRV con ruido aleatorio para desempate (garantiza diversidad)
+    # Ordenación MRV con ruido aleatorio para desempate
     cols_ordenadas_mrv = sorted(
         cols_libres, 
         key=lambda c: (len(dominios[c]), random.random())
@@ -57,7 +56,6 @@ def generar_individuo_ac3_mrv(n, reinas_fijas, dominios, cols_libres):
         if opciones_validas:
             f_elegida = random.choice(opciones_validas)
         else:
-            # Fallback estocástico si la asignación secuencial agota el dominio
             f_elegida = random.choice(list(filas_disponibles))
             
         tablero[c] = f_elegida
@@ -220,8 +218,11 @@ class MemeticoExtremoAC3:
         self.reinas_fijas = reinas_fijas
         self.tam_poblacion = tam_poblacion
         
-        # Poda AC-3 de paso único antes de iniciar la búsqueda
+        print(f"[*] Ejecutando preprocesamiento AC-3 sobre N={n}...")
+        t_ac3 = time.perf_counter()
         self.dominios_ac3, self.cols_libres = preprocesar_dominios_ac3(n, reinas_fijas)
+        print(f"[*] Poda AC-3 completada en {time.perf_counter() - t_ac3:.4f} s.")
+        
         self.filas_fijas = set(reinas_fijas.values())
         self.filas_libres = [f for f in range(n) if f not in self.filas_fijas]
 
@@ -251,9 +252,8 @@ class MemeticoExtremoAC3:
 
     def resolver(self):
         hilos = os.cpu_count() or 4
-        print(f"[*] Motores GLS+VNS+JIT activados en {hilos} núcleos (Preprocesamiento AC-3 + MRV aplicado)...")
+        print(f"[*] Motores GLS+VNS+JIT activados en {hilos} núcleos...")
         
-        # Cálculos dummy para forzar compilación JIT previa
         _ = calcular_aptitud_jit(np.zeros(self.n, dtype=np.int32))
         _ = evaluar_intercambio_gls_jit(np.zeros(self.n, dtype=np.int32), 0, 1, np.zeros(2*self.n, dtype=np.float32), np.zeros(2*self.n, dtype=np.float32), 0.5)
         _ = evaluar_3swap_jit(np.zeros(self.n, dtype=np.int32), 0, 1, 2)
@@ -274,7 +274,7 @@ class MemeticoExtremoAC3:
             while True:
                 mejor_actual = min(aptitudes)
                 if generacion % 5 == 0:
-                    print(f"Gen {generacion:05d} -> Conflictos: {mejor_actual}")
+                    print(f"  Gen {generacion:05d} -> Conflictos: {mejor_actual}")
                     
                 if mejor_actual == 0:
                     return True, poblacion[aptitudes.index(0)], generacion, time.perf_counter() - t_inicio
@@ -286,7 +286,7 @@ class MemeticoExtremoAC3:
                     gens_sin_mejora = 0
                     
                 if gens_sin_mejora >= 15:
-                    print(f"🔄 REINICIO GLS (Gen {generacion}): Regenerando estocásticamente...")
+                    print(f"  🔄 REINICIO GLS (Gen {generacion}): Regenerando estocásticamente...")
                     indices = sorted(range(len(aptitudes)), key=lambda i: aptitudes[i])
                     nueva_pob = [poblacion[indices[0]], poblacion[indices[1]]]
                     
@@ -324,7 +324,7 @@ class MemeticoExtremoAC3:
 
 
 # =================================================================
-# 5. MAIN BENCHMARK
+# 5. MAIN BENCHMARK (N=10000, K=4000)
 # =================================================================
 
 def generar_reinas_fijas_validas(n, cantidad):
@@ -346,16 +346,20 @@ def generar_reinas_fijas_validas(n, cantidad):
 
 
 if __name__ == "__main__":
-    N = 1000
-    CANTIDAD_FIJAS = 500
+    N = 10000
+    CANTIDAD_FIJAS = 4000
     
-    print(f"--- GENERANDO {CANTIDAD_FIJAS} REINAS FIJAS ALEATORIAS PARA N={N} ---")
+    print(f"==========================================================")
+    print(f" PRUEBA HIPERESCALA CON AC-3 + MRV: N = {N}, K = {CANTIDAD_FIJAS}")
+    print(f"==========================================================\n")
+    
+    print(f"--- GENERANDO {CANTIDAD_FIJAS} REINAS FIJAS ALEATORIAS ---")
     reinas_iniciales = generar_reinas_fijas_validas(N, CANTIDAD_FIJAS)
-    print(f"[*] Reinas fijas colocadas. Lanzando motor AC-3 + MRV + GLS + VNS...")
+    print(f"[*] Reinas fijas colocadas. Lanzando motor...")
     
     motor = MemeticoExtremoAC3(N, reinas_iniciales, tam_poblacion=20)
     exito, _, gens, t_ejecucion = motor.resolver()
 
     if exito:
-        print(f"\n¡RETO SUPERADO! Solución en {gens} generaciones.")
-    print(f"Tiempo total: {t_ejecucion:.4f} segundos")
+        print(f"\n¡RETO SUPERADO! N={N} con K={CANTIDAD_FIJAS} resuelto en {gens} generaciones.")
+    print(f"Tiempo total: {t_ejecucion:.4f} segundos ({t_ejecucion / 60:.2f} minutos)")
