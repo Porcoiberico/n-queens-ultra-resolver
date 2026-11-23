@@ -15,7 +15,7 @@ def generar_reinas_fijas_validas(n, cantidad):
     d2_ocupadas = set()
     
     intentos = 0
-    while len(reinas_fijas) < cantidad and intentos < cantidad * 500:
+    while len(reinas_fijas) < cantidad and intentos < cantidad * 1000:
         c = random.randint(0, n - 1)
         f = random.randint(0, n - 1)
         
@@ -191,7 +191,6 @@ class MemeticoExtremo:
         if m == 0:
             return tablero
             
-        # Permutación garantizada sin elementos duplicados
         indices = list(range(1, m, 2)) + list(range(0, m, 2))
         offset = random.randint(0, m - 1)
         indices = indices[offset:] + indices[:offset]
@@ -222,7 +221,6 @@ class MemeticoExtremo:
 
     def resolver(self):
         hilos = os.cpu_count() or 4
-        print(f"[*] Motores GLS+VNS+JIT activados en {hilos} núcleos...")
         
         _ = calcular_aptitud_jit(np.zeros(self.n, dtype=np.int32))
         _ = evaluar_intercambio_gls_jit(np.zeros(self.n, dtype=np.int32), 0, 1, np.zeros(2*self.n, dtype=np.float32), np.zeros(2*self.n, dtype=np.float32), 0.5)
@@ -244,7 +242,7 @@ class MemeticoExtremo:
             while True:
                 mejor_actual = min(aptitudes)
                 if generacion % 5 == 0:
-                    print(f"Gen {generacion:05d} -> Conflictos: {mejor_actual}")
+                    print(f"  Gen {generacion:05d} -> Conflictos: {mejor_actual}")
                     
                 if mejor_actual == 0:
                     return True, poblacion[aptitudes.index(0)], generacion, time.perf_counter() - t_inicio
@@ -256,7 +254,7 @@ class MemeticoExtremo:
                     gens_sin_mejora = 0
                     
                 if gens_sin_mejora >= 15:
-                    print(f"🔄 REINICIO GLS (Gen {generacion}): Regenerando estocásticamente...")
+                    print(f"  🔄 REINICIO GLS (Gen {generacion}): Regenerando estocásticamente...")
                     indices = sorted(range(len(aptitudes)), key=lambda i: aptitudes[i])
                     nueva_pob = [poblacion[indices[0]], poblacion[indices[1]]]
                     
@@ -293,17 +291,20 @@ class MemeticoExtremo:
                 generacion += 1
 
 if __name__ == "__main__":
-    N = 1000
-    CANTIDAD_FIJAS = 950
+    N = 10000
+    NIVELES_K = [1000, 2000, 4000]
     
-    print(f"--- GENERANDO {CANTIDAD_FIJAS} REINAS FIJAS ALEATORIAS PARA N={N} ---")
-    reinas_iniciales = generar_reinas_fijas_validas(N, CANTIDAD_FIJAS)
-    print(f"[*] Reinas fijas colocadas correctamente. Lanzando motor...")
-    print(f"--- ALGORITMO EXTREMO BENCHMARK N={N} (FIJAS={CANTIDAD_FIJAS}) ---")
+    print(f"==========================================================")
+    print(f" BARRIDO MASIVO DE ESTRÉS: N = {N} (100.000.000 casillas)")
+    print(f"==========================================================\n")
     
-    motor = MemeticoExtremo(N, reinas_iniciales, tam_poblacion=20)
-    exito, _, gens, t_ejecucion = motor.resolver()
-
-    if exito:
-        print(f"\n¡RETO SUPERADO! Solución en {gens} generaciones.")
-    print(f"Tiempo total: {t_ejecucion:.4f} segundos")
+    for k in NIVELES_K:
+        print(f"--- GENERANDO {k} REINAS FIJAS ALEATORIAS PARA N={N} ---")
+        reinas_iniciales = generar_reinas_fijas_validas(N, k)
+        print(f"[*] Reinas fijas sin conflictos generadas. Lanzando motor...")
+        
+        motor = MemeticoExtremo(N, reinas_iniciales, tam_poblacion=20)
+        exito, _, gens, t_ejecucion = motor.resolver()
+        
+        if exito:
+            print(f"¡RETO SUPERADO! K={k} resuelto en {gens} generaciones. Tiempo: {t_ejecucion:.4f} s\n")
