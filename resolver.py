@@ -6,7 +6,7 @@ from numba import njit
 import numpy as np
 
 # =================================================================
-# 1. PREPROCESADOR AC-3 Y CONSTRUCTOR MRV
+# 1. PREPROCESADOR AC-3 Y CONSTRUCTOR MRV CON MIN-CONFLICTS FALLBACK
 # =================================================================
 
 def preprocesar_dominios_ac3(n, reinas_fijas):
@@ -30,13 +30,13 @@ def preprocesar_dominios_ac3(n, reinas_fijas):
         ]
         dominios[c] = dom_c
         
-    return dominios, cols_libres
+    return dominios, cols_libres, d1_bloqueadas, d2_bloqueadas
 
 
-def generar_individuo_ac3_mrv(n, reinas_fijas, dominios, cols_libres):
+def generar_individuo_ac3_mrv(n, reinas_fijas, dominios, cols_libres, d1_bloqueadas, d2_bloqueadas):
     """
-    Genera un individuo asignando primero las columnas más restringidas (MRV),
-    añadiendo aleatoriedad para preservar la diversidad de la población.
+    Genera un individuo asignando primero las columnas más restringidas (MRV).
+    Si una columna agota sus opciones del filtro AC-3, se aplica el Min-Conflicts Fallback.
     """
     tablero = [-1] * n
     for c, f in reinas_fijas.items():
@@ -56,7 +56,12 @@ def generar_individuo_ac3_mrv(n, reinas_fijas, dominios, cols_libres):
         if opciones_validas:
             f_elegida = random.choice(opciones_validas)
         else:
-            f_elegida = random.choice(list(filas_disponibles))
+            # Fallback de mínimo conflicto en O(1) respecto a las diagonales fijas
+            muestra_filas = random.sample(list(filas_disponibles), min(10, len(filas_disponibles)))
+            f_elegida = min(muestra_filas, key=lambda f: (
+                (1 if (f + c) in d1_bloqueadas else 0) + 
+                (1 if (f - c) in d2_bloqueadas else 0)
+            ))
             
         tablero[c] = f_elegida
         filas_disponibles.remove(f_elegida)
@@ -220,7 +225,7 @@ class MemeticoExtremoAC3:
         
         print(f"[*] Ejecutando preprocesamiento AC-3 sobre N={n}...")
         t_ac3 = time.perf_counter()
-        self.dominios_ac3, self.cols_libres = preprocesar_dominios_ac3(n, reinas_fijas)
+        self.dominios_ac3, self.cols_libres, self.d1_bloqueadas, self.d2_bloqueadas = preprocesar_dominios_ac3(n, reinas_fijas)
         print(f"[*] Poda AC-3 completada en {time.perf_counter() - t_ac3:.4f} s.")
         
         self.filas_fijas = set(reinas_fijas.values())
@@ -228,7 +233,7 @@ class MemeticoExtremoAC3:
 
     def crear_individuo(self):
         return generar_individuo_ac3_mrv(
-            self.n, self.reinas_fijas, self.dominios_ac3, self.cols_libres
+            self.n, self.reinas_fijas, self.dominios_ac3, self.cols_libres, self.d1_bloqueadas, self.d2_bloqueadas
         )
 
     def cruzar(self, p1, p2):
@@ -324,7 +329,7 @@ class MemeticoExtremoAC3:
 
 
 # =================================================================
-# 5. MAIN BENCHMARK (N=10000, K=4000)
+# 5. MAIN BENCHMARK
 # =================================================================
 
 def generar_reinas_fijas_validas(n, cantidad):
@@ -349,13 +354,13 @@ if __name__ == "__main__":
     N = 10000
     CANTIDAD_FIJAS = 4000
     
-    print(f"==========================================================")
+    print("==========================================================")
     print(f" PRUEBA HIPERESCALA CON AC-3 + MRV: N = {N}, K = {CANTIDAD_FIJAS}")
-    print(f"==========================================================\n")
+    print("==========================================================\n")
     
     print(f"--- GENERANDO {CANTIDAD_FIJAS} REINAS FIJAS ALEATORIAS ---")
     reinas_iniciales = generar_reinas_fijas_validas(N, CANTIDAD_FIJAS)
-    print(f"[*] Reinas fijas colocadas. Lanzando motor...")
+    print("[*] Reinas fijas colocadas. Lanzando motor...")
     
     motor = MemeticoExtremoAC3(N, reinas_iniciales, tam_poblacion=20)
     exito, _, gens, t_ejecucion = motor.resolver()
